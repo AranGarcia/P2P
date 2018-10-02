@@ -1,0 +1,5 @@
+# Python binaries
+__pycache__/*
+
+# P2P
+shared/*
