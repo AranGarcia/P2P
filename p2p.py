@@ -5,17 +5,6 @@ import threading
 from enum import Enum
 
 
-class P2PMessage(Enum):
-    """
-    Constantes para los mensajes que se utilizaran para el protocolo en la red
-    P2P.
-    """
-    LIST = 0
-    GET = 1
-    SEND = 2
-    DISC = 3
-
-
 class P2Pnode:
     def __init__(self, args, sharedir='./share'):
         self.__initcomm(int(args["port"]))
@@ -29,13 +18,12 @@ class P2Pnode:
 
         # Si no se pasan peers, una nueva red se inicia desde cero
         if args["peers"]:
-            self.peernames = arg["peers"]
+            self.peernames = args["peers"].split(';')
+            print("Se intentara conectar con los siguientes peers", self.peernames)
             self.__search_peers()
         else:
             print("No se pasaron peers. Este es el primero en la red P2P.")
             self.peernames = []
-
-        # TODO: Iniciar servicio del nodo
 
     def start(self):
         while(True):
@@ -67,8 +55,9 @@ class P2Pnode:
         self.sock.listen(3)
 
         # Se delega trabajo de atender las solicitudes a un hilo
-        self._t = threading.Thread(target=self.__serveraccept)
-        self._t.start()
+        self.__commthread = threading.Thread(target=self.__serveraccept)
+        self.__commthread.name = "server"
+        self.__commthread.start()
 
     def __search_peers(self):
         """
@@ -78,24 +67,49 @@ class P2Pnode:
         Al conectar con uno, recibirá la lista de todos los demás nodos.
         """
 
-        tempsock = socket.socket()
-
         for p in self.peernames:
             try:
                 # Cada peer debe estar de la forma IP:PUERTO
-                peer_ip, peer_sck = p.split(':')
+                peern = p.split(':')
             except ValueError as ve:
                 raise ValueError(
                     "error al parsear nodo P2P; debe ser del formato IP:PUERTO")
 
-            print("Conectando con", peer_ip, peer_sck)
-            tempsock.connect((peer_ip, int(peer_sck)))
+            self.__requestconnection(peern)
 
     def __serveraccept(self):
         print("Atendiendo solicitudes...")
         while(True):
             con, addr = self.sock.accept()
-            print("Se recibio una solicitud de", addr)
+            print("Mensaje recibido de", addr)
+
+            msg = con.recv(1024)
+
+            thr = threading.Thread(target=self.__processmsg, args=(msg,))
+            thr.start()
+
+    def __requestconnection(self, peer_con):
+        """
+        Solicita una conexion a la red P2P mediante cualquiera de los nodos ya
+        conectados.
+
+        peer_con: Tupla con el nombre de direccion de algun peeer de la format
+            (IP, PORT)
+        """
+        tmpsock = socket.socket()
+
+        try:
+            tmpsock.connect((peer_con[0], int(peer_con[1])))
+        except ConnectionRefusedError:
+            return False
+
+        # TODO: Envio de mensaje de a acuerdo a un protocolo
+        tmpsock.send("Me mandas peers?".encode())
+
+        return True
+
+    def __processmsg(self, msg):
+        print("Procesando mensaje:", msg)
 
     @staticmethod
     def __create_shared(sd):

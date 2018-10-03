@@ -12,7 +12,6 @@ parser.add_argument('--port', type=int, default=8888, required=False,
 parser.add_argument('--peers', help="lista de peers en la red P2P")
 
 args = parser.parse_args()
-print(args)
 
 argv = vars(args)
 
