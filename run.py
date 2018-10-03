@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 
-import p2p
+import argparse
 import sys
 
-if len(sys.argv) < 2:
-    print("run.py [IP]")
-    exit(1)
+import p2p
 
-pnode = p2p.P2Pnode(sys.argv[1:])
+parser = argparse.ArgumentParser(description="Inicia el nodo P2P. Si no se \
+    proporciona una lista de peers, el nodo inicializara la red.")
+parser.add_argument('--port', type=int, default=8888, required=False,
+                    help="puerto para el socket del nodo")
+parser.add_argument('--peers', help="lista de peers en la red P2P")
+
+args = parser.parse_args()
+print(args)
+
+argv = vars(args)
+
+pnode = p2p.P2Pnode(argv)
 pnode.start()

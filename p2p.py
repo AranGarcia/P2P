@@ -1,15 +1,24 @@
-import socket
 import os.path
+import socket
+import threading
 
-PORT = 3232
+from enum import Enum
+
+
+class P2PMessage(Enum):
+    """
+    Constantes para los mensajes que se utilizaran para el protocolo en la red
+    P2P.
+    """
+    LIST = 0
+    GET = 1
+    SEND = 2
+    DISC = 3
 
 
 class P2Pnode:
-    def __init__(self, peers, sharedir='./share'):
-        # Socket propio del nodo
-        self.sock = socket.socket()
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("localhost", PORT))
+    def __init__(self, args, sharedir='./share'):
+        self.__initcomm(int(args["port"]))
 
         # Lista inicial vacía de los demás nodos en la red P2P
         self.peersocks = []
@@ -19,11 +28,12 @@ class P2Pnode:
         P2Pnode.__create_shared(self.sharedir)
 
         # Si no se pasan peers, una nueva red se inicia desde cero
-        if peers:
-            self.peernames = peers
+        if args["peers"]:
+            self.peernames = arg["peers"]
             self.__search_peers()
         else:
-            self.peernames = peernames
+            print("No se pasaron peers. Este es el primero en la red P2P.")
+            self.peernames = []
 
         # TODO: Iniciar servicio del nodo
 
@@ -43,6 +53,22 @@ class P2Pnode:
         Avisa a los demas nodos que se va a desconectar
         """
         pass
+
+    def __initcomm(self, port):
+        """
+        Metodo privado que inicializa el socket del nodo en donde atenderá todas
+        las solicitudes.
+        """
+
+        # Socket propio del nodo
+        self.sock = socket.socket()
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("localhost", port))
+        self.sock.listen(3)
+
+        # Se delega trabajo de atender las solicitudes a un hilo
+        self._t = threading.Thread(target=self.__serveraccept)
+        self._t.start()
 
     def __search_peers(self):
         """
@@ -64,6 +90,12 @@ class P2Pnode:
 
             print("Conectando con", peer_ip, peer_sck)
             tempsock.connect((peer_ip, int(peer_sck)))
+
+    def __serveraccept(self):
+        print("Atendiendo solicitudes...")
+        while(True):
+            con, addr = self.sock.accept()
+            print("Se recibio una solicitud de", addr)
 
     @staticmethod
     def __create_shared(sd):
