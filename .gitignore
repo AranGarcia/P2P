@@ -2,4 +2,4 @@
 __pycache__/*
 
 # P2P
-shared/*
+share/**
