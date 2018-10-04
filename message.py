@@ -118,27 +118,11 @@ def parse_file_bytes(buff, bsize):
         nfsize = buff[pos]
         nf = buff[pos + 1: pos + 1 + nfsize]
 
-        print("TAM", nfsize, "NOM", nf)
+        files.append(nf.decode())
 
         pos += nfsize + 1
 
-
-    # while nfsize:
-    #     print("\tTAM", nfsize, "ARCHIVO:", nf)
-    #
-    #     pos += nfsize
-    #     nfsize = buff[pos]
+    return port, files
 
 if __name__ == '__main__':
-    # p = ["192.168.0.1:9090", "255.255.255.255:1"]
-    # p = [['127.0.0.1', '8888'], ['127.0.0.1', '8889'], ['192.168.0.1', '1111']]
-    #
-    # print([i for i in ip_to_octets_iter("192.168.0.1")])
-    # print([i for i in ip_to_octets_iter("255.255.255.255")])
-    # a = build_peers_message(p)
-    #
-    # print(a)
-    # print(parse_ip_bytes(a[5:]))
-    # print(build_addthis_message("192.168.0.1", 8081))
-
     print(build_givedir_message(['neon_palm_aesthetic.jpg', 'dummy.mp4']))

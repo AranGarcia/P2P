@@ -160,7 +160,7 @@ class P2Pnode:
         """
         for pn in self.peernames:
             with socket.socket() as tmpsock:
-                tmpsock.connect(pn)
+                tmpsock.connect(tuple(pn))
 
                 # Solicitud
                 tmpsock.send(message.REQDIRMSG)
@@ -173,7 +173,8 @@ class P2Pnode:
                 # Primero se le piden sus archivos
                 bodysize = int.from_bytes(header[1:5], byteorder="big")
                 body = tmpsock.recv(bodysize)
-                self.__add_sharefiles(pn, body, bodysize)
+                port, sharelist = message.parse_file_bytes(body, bodysize)
+                self.__add_sharefiles(sharelist, pn)
 
                 # Despues le comparte los suyos
                 tmpsock.send(message.build_givedir_message(
@@ -239,7 +240,8 @@ class P2Pnode:
 
         bodysize = int.from_bytes(header[1:5], byteorder="big")
         body = conn.recv(bodysize)
-        print("[SHARE] El nuevo nodo tambien comparte sus archivos", body)
+        port, sharefiles = message.parse_file_bytes(body, bodysize)
+        self.__add_sharefiles(sharefiles, (addr[0], port))
 
     def __process_givedir(self, conn, addr):
         header = conn.recv(5)
@@ -251,9 +253,16 @@ class P2Pnode:
         bodysize = int.from_bytes(header[1:5], byteorder="big")
         body = conn.recv(bodysize)
 
-    def __add_sharefiles(self, pn, shfiles, bsize):
-        print("AGREGANDO", shfiles)
-        message.parse_file_bytes(shfiles, bsize)
+    def __add_sharefiles(self, shfiles, pn):
+        peerkey = makename(pn)
+        print("[SHARE] Agregando archivos de", peerkey)
+
+        self.virtualdir[peerkey] = set(shfiles)
+
+        print("[SHARE] Nuevo directorio")
+        for k,v in self.virtualdir.items():
+            print(k, v)
+
 
     @staticmethod
     def __create_shared(sd):
@@ -261,3 +270,6 @@ class P2Pnode:
 
         if not os.path.exists(sd):
             os.makedirs(sd)
+
+def makename(ip):
+    return ip[0] + ':' + str(ip[1])
