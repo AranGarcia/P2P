@@ -15,6 +15,7 @@ ADDME = 0x06
 ADDTHIS = 0x07
 REQDIR = 0x08  # Manda a preguntar por las carpetas locales de cada nodo
 GIVEDIR = 0x09
+UPDIR = 0x0A
 
 # Mensajes de conexion constantes
 NCONNMSG = b"\x00\xa5\xa5\xa5\xa5"
@@ -59,7 +60,6 @@ def build_givedir_message(port, files):
     buff[0] = GIVEDIR
     buff.extend(int.to_bytes(port, length=2, byteorder="big"))
 
-
     if files:
         size = 2
         for f in files:
@@ -73,6 +73,42 @@ def build_givedir_message(port, files):
     else:
         buff.append(0x00)
         buff[1:5] = int.to_bytes(3, length=4, byteorder="big")
+
+    return buff
+
+
+def build_getfile_message(fname, partnum, totalparts):
+    buff = bytearray()
+    buff.append(GETFILE)
+
+    buff.append(partnum)
+    buff.append(totalparts)
+
+    fbname = fname.encode()
+    # buff.extend(int.to_bytes(len(fbname), length=2, byteorder="big"))
+    buff.extend(fbname)
+
+    return buff
+
+
+def build_sendfile_message(fbytes):
+    buff = bytearray()
+    buff.append(SENDFILE)
+    buff.extend(int.to_bytes(len(fbytes), length=4, byteorder="big"))
+    buff.extend(fbytes)
+
+    return buff
+
+
+def build_update_virdir(fname, port):
+    buff = bytearray()
+    buff.append(UPDIR)
+
+    buff.extend(int.to_bytes(port, length=2, byteorder="big"))
+    fbytes = fname.encode()
+    buff.extend(int.to_bytes(len(fbytes),  length=4, byteorder="big"))
+    buff.extend(fbytes)
+
 
     return buff
 
@@ -96,10 +132,10 @@ def parse_ip_bytes(buff):
 
     while pbytes:
         ips.append(
-            [
+            (
                 '.'.join(octets_to_ip_iter(pbytes[:4])),
                 int.from_bytes(pbytes[4:], byteorder="big")
-            ]
+            )
         )
 
         pos += 6
@@ -107,6 +143,7 @@ def parse_ip_bytes(buff):
         pbytes = buff[pos:end]
 
     return ips
+
 
 def parse_file_bytes(buff, bsize):
     port = int.from_bytes(buff[:2], byteorder="big")
@@ -124,5 +161,27 @@ def parse_file_bytes(buff, bsize):
 
     return port, files
 
+
+def parse_getfile_bytes(buff):
+    if buff[0] != GETFILE:
+        raise ValueError(
+            "error al interpretar mensaje GETFILE: formato incorrecto.")
+    partnum = buff[1]
+    totalparts = buff[2]
+
+    return (buff[3:].decode(), partnum, totalparts)
+
+
+def get_rangebytes(index, total, parts):
+    amount = total // parts
+    partitions = [amount for i in range(parts)]
+    residue = total - (amount * parts)
+
+    for i in range(residue):
+        partitions[i] += 1
+
+    return sum(partitions[: index - 1]), sum(partitions[:index])
+
+
 if __name__ == '__main__':
-    print(build_givedir_message(['neon_palm_aesthetic.jpg', 'dummy.mp4']))
+    print(get_rangebytes(2, 67155, 1))

@@ -9,6 +9,7 @@ y solicitar a otros nodos servicios como conexion y transferencia de archivos.
 import os.path
 import socket
 import threading
+import time
 
 from enum import Enum
 
@@ -26,6 +27,9 @@ class P2Pnode:
         print("[SHARED]", self.sharedir)
         for f in self.files:
             print("\t", f)
+
+        self.__resource = []
+        self.__sem = None
 
         self.port = int(args["port"])
 
@@ -46,7 +50,7 @@ class P2Pnode:
         while(True):
             try:
                 instruccion = input(">")
-                # TODO: Procesar instruccion
+                self.__execute_instruction(instruccion)
             except KeyboardInterrupt:
                 print("\nNodo P2P finalizado...")
 
@@ -58,6 +62,14 @@ class P2Pnode:
         Avisa a los demas nodos que se va a desconectar
         """
         pass
+
+    def __execute_instruction(self, inst):
+        words = inst.split()
+
+        if words[0] == "get":
+            self.__request_getfile(words[1])
+        else:
+            print("[P2P] Instruccion desconocida:", words[0])
 
     def __initcomm(self, port):
         """
@@ -180,6 +192,41 @@ class P2Pnode:
                 tmpsock.send(message.build_givedir_message(
                     self.port, self.files))
 
+    def __request_getfile(self, fname):
+        print("[GET] Solicitando archivo")
+        peerswithfile = self.virtualdir[fname]
+
+        self.__resource = [b'' for i in range(len(peerswithfile))]
+
+        print("[REQFILE] Se esperan", len(self.__resource), "partes.")
+
+        self.__sem = threading.Semaphore(len(peerswithfile))
+
+        for index, p in enumerate(peerswithfile, 1):
+            t = threading.Thread(target=self.__recvfile_partitioned,
+                                 args=(p, fname, index, len(peerswithfile)))
+            t.start()
+
+        time.sleep(1)
+        self.__sem.acquire(len(peerswithfile))
+
+        with open(self.sharedir + '/' + fname, "wb") as rfile:
+            buff = bytearray()
+            for r in self.__resource:
+                buff.extend(r)
+
+            rfile.write(buff)
+
+        print("[REQFILE ]Archivo recibido.")
+
+
+        # self.__update_virdir(fname)
+
+    # def __update_virdir(self, fname):
+    #     for p in self.peernames:
+    #         with socket.socket() as tsock:
+    #             tsock.connect(p)
+
     def __processmsg(self, msg, con, addr):
         """
         Procesa los 5 bytes recibidos y determina el tipo de mensaje y la accion
@@ -197,6 +244,10 @@ class P2Pnode:
         elif msgid == message.REQDIR:
             print("[SHARE] Se comparten elementos de la carpeta compartida.")
             self.__process_reqdir(con, addr)
+        elif msgid == message.GETFILE:
+            self.__process_getfile(msg, con, addr)
+        elif msgid == message.UPDIR:
+            self.__process_updir(msg, con, addr)
         else:
             print("[PROCESSING] Mensaje no procesable de", addr, ":\n", msg)
 
@@ -253,16 +304,55 @@ class P2Pnode:
         bodysize = int.from_bytes(header[1:5], byteorder="big")
         body = conn.recv(bodysize)
 
+    def __process_getfile(self, msg, conn, addr):
+        fname, part, totalparts = message.parse_getfile_bytes(msg)
+
+        with open(self.sharedir + '/' + fname, "rb") as f:
+            fbytes = f.read()
+            left, right = message.get_rangebytes(part, len(fbytes), totalparts)
+
+        print("[SEND] Se mandara archivo",
+              fname, "(", part, "/", totalparts, ") de", left, "a", right)
+        print("[SEND] Tamano de trama:", right -
+              left, "\tTamano:", len(fbytes))
+
+        conn.send(message.build_sendfile_message(fbytes[left:right]))
+
+    def __process_updir(self, msg, conn, addr):
+        port = msg
+
     def __add_sharefiles(self, shfiles, pn):
         peerkey = makename(pn)
         print("[SHARE] Agregando archivos de", peerkey)
 
-        self.virtualdir[peerkey] = set(shfiles)
+        for sf in shfiles:
+            if sf not in self.virtualdir:
+                self.virtualdir[sf] = set()
+
+            self.virtualdir[sf].add(pn)
 
         print("[SHARE] Nuevo directorio")
-        for k,v in self.virtualdir.items():
-            print(k, v)
+        for k, v in self.virtualdir.items():
+            print("\t", k, v)
 
+    def __recvfile_partitioned(self, peer, fname, partnum, totalparts):
+        with socket.socket() as filesock:
+            self.__sem.acquire()
+            filesock.connect(peer)
+            filesock.send(message.build_getfile_message(
+                fname, partnum, totalparts))
+
+            resp = filesock.recv(5)
+            if resp[0] != message.SENDFILE:
+                raise ValueError("no se recibio un mensaje con archivo.")
+
+            bsize = int.from_bytes(resp[1:5], byteorder="big")
+            body = filesock.recv(bsize)
+            print("Se recibieron", bsize, "bytes")
+            self.__resource[partnum - 1] = body
+
+            # If all resource have been received, unlock Semaphore
+            self.__sem.release()
 
     @staticmethod
     def __create_shared(sd):
@@ -270,6 +360,7 @@ class P2Pnode:
 
         if not os.path.exists(sd):
             os.makedirs(sd)
+
 
 def makename(ip):
     return ip[0] + ':' + str(ip[1])
