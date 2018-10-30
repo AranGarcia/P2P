@@ -109,7 +109,6 @@ def build_update_virdir(fname, port):
     buff.extend(int.to_bytes(len(fbytes),  length=4, byteorder="big"))
     buff.extend(fbytes)
 
-
     return buff
 
 

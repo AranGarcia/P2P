@@ -86,6 +86,7 @@ class P2Pnode:
         # Se delega trabajo de atender las solicitudes a un hilo
         self.__commthread = threading.Thread(target=self.__serveraccept)
         self.__commthread.name = "server"
+        self.__commthread.daemon = True
         self.__commthread.start()
 
     def __search_peers(self, peernames):
@@ -105,7 +106,7 @@ class P2Pnode:
                     peern[0] = "127.0.0.1"
 
                 self.peernames.append((peern[0], int(peern[1])))
-            except ValueError as ve:
+            except ValueError:
                 raise ValueError(
                     "error al parsear nodo P2P; debe ser del formato IP:PUERTO")
 
@@ -200,25 +201,27 @@ class P2Pnode:
 
         print("[REQFILE] Se esperan", len(self.__resource), "partes.")
 
-        self.__sem = threading.Semaphore(len(peerswithfile))
+        self.__sem = threading.Semaphore(0)
 
         for index, p in enumerate(peerswithfile, 1):
             t = threading.Thread(target=self.__recvfile_partitioned,
                                  args=(p, fname, index, len(peerswithfile)))
             t.start()
 
-        time.sleep(1)
-        self.__sem.acquire(len(peerswithfile))
+        for i in range(len(peerswithfile)):
+            self.__sem.acquire()
+            print("Peer #", i + 1, "terminado.")
 
+        buff = bytearray()
+        for r in self.__resource:
+            print("WRITING:", len(r), "bytes.")
+            buff.extend(r)
+        
         with open(self.sharedir + '/' + fname, "wb") as rfile:
-            buff = bytearray()
-            for r in self.__resource:
-                buff.extend(r)
-
             rfile.write(buff)
 
-        print("[REQFILE ]Archivo recibido.")
 
+        print("[REQFILE ]Archivo recibido.")
 
         # self.__update_virdir(fname)
 
@@ -316,7 +319,14 @@ class P2Pnode:
         print("[SEND] Tamano de trama:", right -
               left, "\tTamano:", len(fbytes))
 
-        conn.send(message.build_sendfile_message(fbytes[left:right]))
+        msg = message.build_sendfile_message(fbytes[left:right])
+        start = 0
+        buff = msg[:1024]
+        while buff:
+            print("Sending...")
+            conn.send(buff)
+            start += 1024
+            buff = msg[start:start+1024]
 
     def __process_updir(self, msg, conn, addr):
         port = msg
@@ -337,21 +347,26 @@ class P2Pnode:
 
     def __recvfile_partitioned(self, peer, fname, partnum, totalparts):
         with socket.socket() as filesock:
-            self.__sem.acquire()
             filesock.connect(peer)
             filesock.send(message.build_getfile_message(
                 fname, partnum, totalparts))
 
-            resp = filesock.recv(5)
-            if resp[0] != message.SENDFILE:
+            buff = bytearray()
+            resp = filesock.recv(1024)
+            while resp:
+                buff.extend(resp)
+                resp = filesock.recv(1024)
+
+            if buff[0] != message.SENDFILE:
                 raise ValueError("no se recibio un mensaje con archivo.")
 
             bsize = int.from_bytes(resp[1:5], byteorder="big")
-            body = filesock.recv(bsize)
             print("Se recibieron", bsize, "bytes")
-            self.__resource[partnum - 1] = body
+            del(buff[:5])
+            self.__resource[partnum - 1] = buff
 
-            # If all resource have been received, unlock Semaphore
+            print("BUFF", partnum, "finished:", len(
+                self.__resource[partnum - 1]), "bytes")
             self.__sem.release()
 
     @staticmethod

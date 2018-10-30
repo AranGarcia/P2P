@@ -1,5 +1,8 @@
 # Python binaries
 __pycache__/*
 
+# VS Code
+.vscode/
+
 # P2P
 share/**
